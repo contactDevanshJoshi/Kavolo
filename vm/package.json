@@ -16,7 +16,7 @@
     "pino": "^9.6.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": "20"
   },
   "private": true
 }
