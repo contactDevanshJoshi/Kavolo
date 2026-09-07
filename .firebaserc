@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "kavolo-e1921"
+  },
+  "targets": {
+    "kavolo-e1921": {
+      "hosting": {
+        "app": [
+          "kavolo"
+        ]
+      }
+    }
+  }
+}
