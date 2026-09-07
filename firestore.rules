@@ -1,9 +1,85 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Baseline rules - Phase 1 will implement full tenant-scoped rules (AUTHZ-1..3)
+
+    // Helper functions (SRS §9, §12)
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(tenantId) {
+      return isAuthenticated() && request.auth.uid == tenantId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.is_admin == true;
+    }
+
+    function isValidStatus(status) {
+      return status in ['New', 'Contacted', 'Replied', 'Interested', 'Converted', 'Lost'];
+    }
+
+    function isValidServiceProfile(profile) {
+      return profile in ['web_development', 'whatsapp_automation'];
+    }
+
+    // 6.1 Tenants Collection (Tenant isolation per AUTHZ-1, SEC-2)
+    match /tenants/{tenantId} {
+      allow read: if isOwner(tenantId) || isAdmin();
+      
+      // Tenant can create their own doc during onboarding
+      allow create: if isOwner(tenantId) 
+                    && isValidServiceProfile(request.resource.data.service_profile);
+
+      // Tenant or admin can update; if service profile was locked, enforce immutability (BR-3, EC-3)
+      allow update: if (isOwner(tenantId) || isAdmin())
+                    && (!('service_profile_locked' in resource.data) 
+                        || resource.data.service_profile_locked != true 
+                        || request.resource.data.service_profile == resource.data.service_profile);
+
+      allow delete: if isAdmin();
+
+      // 6.2 Leads Subcollection (tenants/{tenantId}/leads)
+      match /leads/{leadId} {
+        allow read: if isOwner(tenantId) || isAdmin();
+        
+        allow create, update: if (isOwner(tenantId) || isAdmin())
+                              && isValidStatus(request.resource.data.status)
+                              && request.resource.data.opportunity_score >= 0 
+                              && request.resource.data.opportunity_score <= 100;
+
+        allow delete: if isOwner(tenantId) || isAdmin();
+
+        // 6.3 Conversations Subcollection (tenants/{tenantId}/leads/{leadId}/conversations)
+        match /conversations/{conversationId} {
+          allow read: if isOwner(tenantId) || isAdmin();
+          allow create, update: if isOwner(tenantId) || isAdmin();
+          allow delete: if isOwner(tenantId) || isAdmin();
+        }
+      }
+
+      // 6.4 Campaigns Subcollection (tenants/{tenantId}/campaigns)
+      match /campaigns/{campaignId} {
+        allow read: if isOwner(tenantId) || isAdmin();
+        allow create, update: if isOwner(tenantId) || isAdmin();
+        allow delete: if isOwner(tenantId) || isAdmin();
+      }
+    }
+
+    // Admin-only usage statistics collection (SRS FR-29, FR-30, AUTHZ-2, SEC-6)
+    match /usage/{date} {
+      allow read: if isAdmin();
+      allow write: if false; // Only Firebase Admin SDK can write usage records
+    }
+
+    // Backend send queue: Strictly non-client reachable (AUTHZ-3, SAD §3, §4.2)
+    match /send_queue/{jobId} {
+      allow read, write: if false;
+    }
+
+    // Default deny rule for any unspecified documents (SEC-2)
     match /{document=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }
