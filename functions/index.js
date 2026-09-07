@@ -13,3 +13,6 @@ export const healthcheck = onRequest((request, response) => {
   logger.info("Health check ping received", { structuredData: true });
   response.status(200).json({ status: "ok", service: "kavolo-functions", timestamp: new Date().toISOString() });
 });
+
+
+
